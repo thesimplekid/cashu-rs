@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use url::Url;
 
-use crate::ecash::{self, BlindedMessage, MintProofs, Proofs, Token};
+use crate::ecash::{self, MintProofs, Token};
 use crate::keyset::{self, KeySet};
 use crate::mint::request::{Endpoint, Request};
 use crate::mint::{Invoice, MintResponse, Sha256, SplitResponse};
@@ -330,26 +330,33 @@ impl PreMintSecrets {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MeltRequest {
-    pub proofs: Proofs,
-    #[serde(rename = "pr")]
-    pub payment_request: lightning_invoice::Invoice,
-    pub outputs: Vec<BlindedMessage>,
-}
+pub mod melt {
+    use serde::{Deserialize, Serialize};
 
-impl MeltRequest {
-    pub fn proofs_amount(&self) -> Amount {
-        self.proofs.iter().map(|proof| proof.amount).sum()
+    use crate::ecash::{BlindedMessage, Proofs};
+    use crate::Amount;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Request {
+        pub proofs: Proofs,
+        #[serde(rename = "pr")]
+        pub payment_request: lightning_invoice::Invoice,
+        pub outputs: Vec<BlindedMessage>,
     }
 
-    pub fn invoice_amount(&self) -> Amount {
-        let msat = self.payment_request.amount_milli_satoshis();
-        if let Some(amount) = msat {
-            let sat = amount / 1000;
-            Amount::from(sat)
-        } else {
-            Amount::ZERO
+    impl Request {
+        pub fn proofs_amount(&self) -> Amount {
+            self.proofs.iter().map(|proof| proof.amount).sum()
+        }
+
+        pub fn invoice_amount(&self) -> Amount {
+            let msat = self.payment_request.amount_milli_satoshis();
+            if let Some(amount) = msat {
+                let sat = amount / 1000;
+                Amount::from(sat)
+            } else {
+                Amount::ZERO
+            }
         }
     }
 }

@@ -344,7 +344,10 @@ impl Mint {
         }
     }
 
-    pub fn verify_melt_request(&mut self, melt_request: &wallet::MeltRequest) -> Result<(), Error> {
+    pub fn verify_melt_request(
+        &mut self,
+        melt_request: &wallet::melt::Request,
+    ) -> Result<(), Error> {
         let proofs_total = melt_request.proofs_amount();
 
         // TODO: Fee reserve
@@ -362,7 +365,7 @@ impl Mint {
 
     pub fn process_melt_request(
         &mut self,
-        melt_request: wallet::MeltRequest,
+        melt_request: wallet::melt::Request,
         preimage: &str,
         total_spent: Amount,
     ) -> Result<MeltResponse, Error> {
