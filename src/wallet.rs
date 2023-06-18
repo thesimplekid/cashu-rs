@@ -395,7 +395,16 @@ impl From<&PreMintSecrets> for MintRequest {
     }
 }
 
-pub mod check {
+pub mod check_fees {
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Request {
+        pub pr: String,
+    }
+}
+
+pub mod check_spendable {
     use bitcoin::secp256k1::PublicKey;
     use serde::{Deserialize, Serialize};
 

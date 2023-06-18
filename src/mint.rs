@@ -9,7 +9,7 @@ use crate::ecash::{self, BlindedMessage, BlindedSignature};
 use crate::keyset;
 use crate::keyset::mint::KeySet;
 use crate::secret::Secret;
-use crate::wallet::{self, check};
+use crate::wallet::{self, check_spendable};
 use crate::Amount;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -396,7 +396,7 @@ impl Mint {
 
     pub fn check_spendable(
         &self,
-        check_request: check::Request,
+        check_request: check_spendable::Request,
     ) -> Result<CheckSpendableResponse, Error> {
         let spendable = check_request
             .proofs
