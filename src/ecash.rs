@@ -8,7 +8,7 @@ use crate::Amount;
 /// An encrypted ("blinded") secret and an amount is sent from Alice to Bob
 /// for minting tokens or for splitting tokens. A BlindedMessage is also
 /// called an output.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BlindedMessage {
     /// The value of the requested token
     pub amount: Amount,

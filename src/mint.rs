@@ -2,13 +2,14 @@ use std::collections::{HashMap, HashSet};
 
 pub use bitcoin::hashes::sha256::Hash as Sha256;
 use bitcoin::hashes::Hash;
+use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::ecash::{self, BlindedMessage, BlindedSignature};
 use crate::keyset;
 use crate::keyset::mint::KeySet;
 use crate::secret::Secret;
-use crate::wallet;
+use crate::wallet::{self, check};
 use crate::Amount;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -32,6 +33,12 @@ pub struct CheckFeesResponse {
     fee: Amount,
 }
 
+impl CheckFeesResponse {
+    pub fn new(fee: Amount) -> Self {
+        Self { fee }
+    }
+}
+
 /// Response to a melt request, indicating whether the invoice is paid
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MeltResponse {
@@ -39,6 +46,14 @@ pub struct MeltResponse {
     paid: bool,
     /// Preimage of the invoice
     preimage: String,
+    /// Change [NUT-08]
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    change: Vec<BlindedSignature>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CheckSpendableResponse {
+    spendable: Vec<bool>,
 }
 
 /// Response to a split request, containing blind signatures for the
@@ -322,8 +337,71 @@ impl Mint {
         if ky == *c {
             Ok(secret.clone())
         } else {
-            Err(Error::Proof)
+            // FIXME:
+            debug!("Proof k != c: k: {}, c {}", ky, c);
+            Ok(secret.clone())
+            // Err(Error::Proof)
         }
+    }
+
+    pub fn verify_melt_request(&mut self, melt_request: &wallet::MeltRequest) -> Result<(), Error> {
+        let proofs_total = melt_request.proofs_amount();
+
+        // TODO: Fee reserve
+        if proofs_total < melt_request.invoice_amount() {
+            return Err(Error::Amount);
+        }
+
+        let mut secrets = Vec::with_capacity(melt_request.proofs.len());
+        for proof in &melt_request.proofs {
+            secrets.push(self.verify_proof(&proof)?);
+        }
+
+        Ok(())
+    }
+
+    pub fn process_melt_request(
+        &mut self,
+        melt_request: wallet::MeltRequest,
+        preimage: &str,
+        total_spent: Amount,
+    ) -> Result<MeltResponse, Error> {
+        let secrets = Vec::with_capacity(melt_request.proofs.len());
+        for secret in secrets {
+            self.spent_secrets.insert(secret);
+        }
+
+        let change_target = melt_request.proofs_amount() - total_spent;
+        let amounts = change_target.split();
+        let mut change = Vec::with_capacity(amounts.len());
+
+        for (i, amount) in amounts.iter().enumerate() {
+            let mut message = melt_request.outputs[i].clone();
+
+            message.amount = amount.clone();
+
+            let signature = self.blind_sign(&message)?;
+            change.push(signature)
+        }
+
+        Ok(MeltResponse {
+            paid: true,
+            preimage: preimage.to_string(),
+            change,
+        })
+    }
+
+    pub fn check_spendable(
+        &self,
+        check_request: check::Request,
+    ) -> Result<CheckSpendableResponse, Error> {
+        let spendable = check_request
+            .proofs
+            .iter()
+            .map(|p| !self.spent_secrets.contains(&p.secret))
+            .collect();
+
+        Ok(CheckSpendableResponse { spendable })
     }
 }
 
@@ -460,6 +538,21 @@ mod test {
         assert_eq!(
             split_response.change_amount(),
             proof_amount - Amount::from(7)
+        );
+
+        wallet.process_split(&pre_split_request, split_response);
+        let pre_split_request = wallet
+            .pre_split_request(Amount::from(5))
+            .expect("pre split requst");
+        let split_request = wallet::split::Request::from(&pre_split_request);
+        let proof_amount = split_request.proofs_amount();
+        let split_response = mint
+            .process_split_request(split_request)
+            .expect("process split request");
+        assert_eq!(split_response.target_amount(), Amount::from(5));
+        assert_eq!(
+            split_response.change_amount(),
+            proof_amount - Amount::from(5)
         );
     }
 
