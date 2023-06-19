@@ -48,7 +48,7 @@ pub struct MeltResponse {
     preimage: String,
     /// Change [NUT-08]
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    change: Vec<BlindedSignature>,
+    change: Vec<ecash::BlindedSignature>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -190,6 +190,7 @@ impl Mint {
     }
 
     pub fn pay_invoice(&mut self, hash: Sha256) {
+        debug!("Adding invoice: {:?}", hash);
         if let Some((amount, Some(invoice))) = self.pending_invoices.remove(&hash) {
             self.paid_invoices.insert(hash, (amount, invoice));
         }
@@ -243,6 +244,35 @@ impl Mint {
         })
     }
 
+    fn create_split_response(
+        &self,
+        amount: Amount,
+        outputs: &[BlindedMessage],
+    ) -> Result<SplitResponse, Error> {
+        let mut target_total = Amount::ZERO;
+        let mut change_total = Amount::ZERO;
+        let mut target = Vec::with_capacity(outputs.len());
+        let mut change = Vec::with_capacity(outputs.len());
+
+        // Create sets of target and change amounts that we're looking for
+        // in the outputs (blind messages). As we loop, take from those sets,
+        // target amount first.
+        for output in outputs {
+            let signed = self.blind_sign(&output)?;
+
+            // Accumulate outputs into the target (send) list
+            if target_total + signed.amount <= amount {
+                target_total += signed.amount;
+                target.push(signed);
+            } else {
+                change_total += signed.amount;
+                change.push(signed);
+            }
+        }
+
+        Ok(SplitResponse { change, target })
+    }
+
     pub fn process_split_request(
         &mut self,
         split_request: wallet::split::Request,
@@ -262,32 +292,20 @@ impl Mint {
         }
 
         let mut secrets = Vec::with_capacity(split_request.proofs.len());
-        for proof in split_request.proofs {
+        for proof in &split_request.proofs {
             secrets.push(self.verify_proof(&proof)?);
         }
 
-        let mut target_total = Amount::ZERO;
-        let mut change_total = Amount::ZERO;
-        let mut target = Vec::with_capacity(split_request.outputs.len());
-        let mut change = Vec::with_capacity(split_request.outputs.len());
+        let mut split_response =
+            self.create_split_response(split_request.amount, &split_request.outputs)?;
 
-        // Create sets of target and change amounts that we're looking for
-        // in the outputs (blind messages). As we loop, take from those sets,
-        // target amount first.
-        for output in split_request.outputs {
-            let signed = self.blind_sign(&output)?;
-
-            // Accumulate outputs into the target (send) list
-            if target_total + signed.amount <= split_request.amount {
-                target_total += signed.amount;
-                target.push(signed);
-            } else {
-                change_total += signed.amount;
-                change.push(signed);
-            }
+        if split_response.target_amount() != split_request.amount {
+            let mut outputs = split_request.outputs;
+            outputs.reverse();
+            split_response = self.create_split_response(split_request.amount, &outputs)?;
         }
 
-        if target_total != split_request.amount {
+        if split_response.target_amount() != split_request.amount {
             return Err(Error::OutputOrdering);
         }
 
@@ -295,7 +313,7 @@ impl Mint {
             self.spent_secrets.insert(secret);
         }
 
-        Ok(SplitResponse { change, target })
+        Ok(split_response)
     }
 
     fn verify_proof(&self, proof: &ecash::Proof) -> Result<Secret, Error> {
@@ -335,12 +353,13 @@ impl Mint {
         let ky = y.mul_tweak(&secp, &Scalar::from(k)).expect("ec math");
 
         if ky == *c {
+            debug!("Verified");
             Ok(secret.clone())
         } else {
             // FIXME:
             debug!("Proof k != c: k: {}, c {}", ky, c);
-            Ok(secret.clone())
-            // Err(Error::Proof)
+            // Ok(secret.clone())
+            Err(Error::Proof)
         }
     }
 
