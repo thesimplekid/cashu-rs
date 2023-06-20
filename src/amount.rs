@@ -24,6 +24,22 @@ impl Amount {
     pub fn to_string(&self) -> String {
         self.0.to_sat().to_string()
     }
+
+    pub fn to_sat(&self) -> u64 {
+        self.0.to_sat()
+    }
+
+    pub fn to_msat(&self) -> u64 {
+        self.0.to_sat() * 1000
+    }
+
+    pub fn from_sat(sat: u64) -> Self {
+        Self(bitcoin::Amount::from_sat(sat))
+    }
+
+    pub fn from_msat(msat: u64) -> Self {
+        Self(bitcoin::Amount::from_sat(msat / 1000))
+    }
 }
 
 impl Default for Amount {
