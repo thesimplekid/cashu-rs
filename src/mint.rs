@@ -115,6 +115,25 @@ impl Mint {
         }
     }
 
+    /// Create a new mint, generating a keyset
+    pub fn new_with_history(
+        secret: impl Into<String>,
+        derivation_path: impl Into<String>,
+        max_order: u8,
+        inactive_keysets: HashMap<keyset::Id, KeySet>,
+        paid_invoices: HashMap<Sha256, (Amount, lightning_invoice::Invoice)>,
+        pending_invoices: HashMap<Sha256, (Amount, Option<lightning_invoice::Invoice>)>,
+        spent_secrets: HashSet<Secret>,
+    ) -> Self {
+        Self {
+            active_keyset: KeySet::generate(secret, derivation_path, max_order),
+            inactive_keysets,
+            paid_invoices,
+            pending_invoices,
+            spent_secrets,
+        }
+    }
+
     pub fn from_keyset(keyset: KeySet) -> Self {
         Self {
             active_keyset: keyset,
@@ -136,6 +155,10 @@ impl Mint {
         let mut keysets: Vec<_> = self.inactive_keysets.keys().cloned().collect();
         keysets.push(self.active_keyset.id.clone());
         KeySetsResponse { keysets }
+    }
+
+    pub fn active_keyset(&self) -> keyset::mint::KeySet {
+        self.active_keyset.clone()
     }
 
     pub fn keyset(&self, id: &keyset::Id) -> Option<keyset::KeySet> {
@@ -548,7 +571,7 @@ mod test {
 
         let pre_split_request = wallet
             .pre_split_request(Amount::from(7))
-            .expect("pre split requst");
+            .expect("pre split request");
         let split_request = wallet::split::Request::from(&pre_split_request);
         let proof_amount = split_request.proofs_amount();
 
@@ -565,7 +588,7 @@ mod test {
         wallet.process_split(&pre_split_request, split_response);
         let pre_split_request = wallet
             .pre_split_request(Amount::from(5))
-            .expect("pre split requst");
+            .expect("pre split request");
         let split_request = wallet::split::Request::from(&pre_split_request);
         let proof_amount = split_request.proofs_amount();
         let split_response = mint

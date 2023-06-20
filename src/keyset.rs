@@ -224,7 +224,6 @@ pub mod mint {
             self.0.get(&amount)
         }
     }
-
     /// Mapping of Amounts to KeyPairs that the mint controls
     #[derive(Debug, Clone, Serialize, Deserialize)]
     pub struct KeySet {
